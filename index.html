@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>mich MCQUEEN</title>
+<style>
+    body{margin: 0; overflow: hidden;font-family :Verdana, Geneva, Tahoma, sans-serif
+    ;}
+    #score{
+        position: absolute;
+        top:10px;
+        left:10px;
+        color:white;
+        font-size: 24px;
+        background: rgba(0,0,0,0.5);
+        padding: 5px 10px;
+        border-radius: 5px;
+        pointer-events: none;
+
+    }
+
+    #gameOver{
+        position:absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 20px;
+        background: rgba(0,0,0,0.7);
+        padding: 10px 20px;
+        border-radius: 5px;
+        display: none;
+        pointer-events: none;
+    }
+   #restart
+   {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform:translateX(-50%);
+    color:blue;
+    font-size: 20px;
+    background:rgba(0,0,0,0.7) ;
+    padding:10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    border:none;
+   }
+
+   #restart:hover{
+    background: rgba(0,0,0,0.9);
+   }
+</style>
+</head>
+
+<body>
+    <div id="score">Score: 0</div>
+    <div id="gameOver">GAME OVER</div>
+    <button id="restart">RESTART</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        camera.position.set(0,5,10);
+        camera.lookAt(0,0,0);
+
+        const renderer = new THREE.WebGLRenderer({antialias:true});
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.DirectionalLight(0x404040);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff,1);
+        dirLight.position.set(5,10,7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.PointLight(0xffffff, 0.5);
+        fillLight.position.set(0,5,10);
+        scene.add(fillLight);
+
+        const roadWidth = 4;
+        const roadLength = 50;
+        const roadGeometry = new THREE.PlaneGeometry(roadWidth,roadLength);
+        const roadMaterial = new THREE.MeshStandardMaterial({color:0x333333});
+        const road = new THREE.Mesh(roadGeometry,roadMaterial);
+
+        road.rotation.x = -Math.PI/2;
+        road.position.y = 0;
+        road.position.z = -roadLength/2 + 2;
+        road.receiveShadow = true;
+        scene.add(road);
+
+        const laneLines = [];
+        const laneMaterial = new THREE.MeshStandardMaterial({color:0xffffff});
+        const lineSpacing = 3;
+        const lineCount = 8;
+        const lineStart = 4;
+        const lineEnd = lineStart - lineCount * lineSpacing;
+
+        for(let i = 0; i < lineCount; i++){
+            const lineGeo = new THREE.PlaneGeometry(0.2, 1);
+            const line = new THREE.Mesh(lineGeo, laneMaterial);
+            line.rotation.x = -Math.PI / 2;
+            line.position.y = 0.01;
+            line.position.z = lineStart - i * lineSpacing;
+            line.position.x = 0;
+            line.receiveShadow = true;
+            scene.add(line);
+            laneLines.push(line);
+        }
+
+        const roadSpeed = 0.15;
+
+        const barrierMaterial = new THREE.MeshStandardMaterial({color: 0x00aa00});
+
+        for(let side = -1; side <= 1; side += 2){
+            const barrierGeo = new THREE.BoxGeometry(0.5,0.5, roadLength);
+            const barrier = new THREE.Mesh(barrierGeo, barrierMaterial);
+            barrier.position.set(side * (roadWidth/2 + 0.25), 0.25, -roadLength/2 + 2);
+            barrier.castShadow = true;
+            barrier.receiveShadow = true;
+            scene.add(barrier);
+
+        }
+
+        const carGroup = new THREE.Group();
+
+        const bodyGeo = new THREE.BoxGeometry(1, 0.5, 2);
+        const bodyMat = new THREE.MeshStandardMaterial({color:0xff0000});
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.25;
+        body.castShadow = true;
+        body.receiveShadow = true;
+        carGroup.add(body);
+
+        
+        const roofGeo = new THREE.BoxGeometry(0.8, 0.4, 1);
+        const roofMat = new THREE.MeshStandardMaterial({color:0xffffff});
+        const roof = new THREE.Mesh(roofGeo, roofMat);
+        roof.position.y = 0.7;
+        roof.position.z = -0.2;
+        roof.castShadow = true;
+        roof.receiveShadow = true;
+        carGroup.add(roof);
+
+        carGroup.position.set(0,0,2);
+        scene.add(carGroup);
+
+        let obstacles = [];
+        const obstacleSpeed = 0.1;
+        const spawnInterval = 60;
+        let frameCounter = 0;
+
+        function createObstacle(){
+            const geo = new THREE.BoxGeometry(1, 0.5, 1);
+            const mat = new THREE.MeshStandardMaterial({color:0xffaa00});
+            const obs = new THREE.Mesh(geo, mat);
+            const maxX = roadWidth / 2 - 0.5;
+            obs.position.x = (Math.random() * 2 -1) * maxX;
+            obs.position.y = 0.25;
+            obs.position.z = -roadLength + 2;
+            obs.castShadow = true;
+            obs.receiveShadow = true;
+            scene.add(obs);
+            obstacles.push(obs);
+        }
+
+        let score=0;
+        let gameActive=true;
+        const scoreDiv = document.getElementById('score');
+        const restartBtn = document.getElementById('restart');
+        const gameOverDiv = document.getElementById('gameOver');
+        
+        function updateScore(){
+            scoreDiv.textContent='score:'+score;
+        }
+
+        const keys={};
+        window.addEventListener('keydown',(e)=>{
+            keys[e.code]=true;
+
+        });
+
+        window.addEventListener('keyup',(e)=>{
+            keys[e.code]=false;
+
+        });
+
+        const carSpeed=0.2;
+
+        function checkCollision(car,obstacle){
+            const carBox=new THREE.Box3().setFromObject(car);
+            const obsBox=new THREE.Box3().setFromObject(obstacle);
+            return carBox.intersectsBox(obsBox);
+        }
+
+        function animate(){
+            requestAnimationFrame(animate);
+            if(gameActive){
+                if(keys['ArrowLeft']&&carGroup.position.x>-roadWidth/2+0.7){
+                    carGroup.position.x-=carSpeed;
+
+
+                }
+            if(keys['ArrowRight']&&carGroup.position.x< roadWidth/2-0.7){
+                    carGroup.position.x+=carSpeed;
+                    
+
+                }
+            
+                frameCounter++;
+
+                if(frameCounter % spawnInterval === 0)
+                {
+                    createObstacle();
+                }
+
+                for(let i = 0; i < laneLines.length; i++){
+                    laneLines[i].position.z += roadSpeed;
+
+                    if(laneLines[i].position.z > lineStart){
+                        laneLines[i].position.z = lineEnd;
+                    }
+                }
+
+                for(let i = obstacles.length -1 ; i >= 0; i--){
+                    const obs = obstacles[i];
+                    obs.position.z += obstacleSpeed;
+
+                    if(obs.position.z > 5)
+                {
+                    scene.remove(obs);
+                    obstacles.splice(i,1);
+                    score++;
+                    updateScore();
+                }
+
+                if(checkCollision(carGroup, obs)){
+                    gameActive = false;
+                    gameOverDiv.style.display = 'block';
+                }
+                }
+            }
+
+            camera.lookAt(carGroup.position);
+            renderer.render(scene, camera);
+        }
+        animate();
+        function restartGame() {
+            obstacles.forEach(obs =>scene.remove(obs));
+            obstacles=[];
+            carGroup.position.set(0,0,2);
+            score=0;
+            updateScore();
+            gameOverDiv.style.display='none';
+            gameActive=true;
+            frameCounter=0;
+            
+        }
+
+        restartBtn.addEventListener('click',restartGame);
+        
+        window.addEventListener('resize',() =>{
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+
+</body>
+
+</html>
